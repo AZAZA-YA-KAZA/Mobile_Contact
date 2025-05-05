@@ -134,7 +134,6 @@ public class ContactFragment extends Fragment {
                                                 break;
                                             }
                                         }
-
                                         if (!duplicate) {
                                             contactList.add(new Contact(name, formatted, photo));
                                         }
@@ -153,16 +152,21 @@ public class ContactFragment extends Fragment {
     }
 
     private String format(String phoneNumber) {
-        if (phoneNumber.length() < 11) return phoneNumber;
-        StringBuilder result = new StringBuilder();
-        int len = phoneNumber.length();
-        for (int i = 0; i < len; i++) {
-            char ch = phoneNumber.charAt(i);
-            result.append(ch);
-            if (i == len - 8) result.append(" (");
-            if (i == len - 6) result.append(") ");
-            if (i == len - 4 || i == len - 2) result.append("-");
+        if (phoneNumber.length() < 11)
+            return phoneNumber;
+        String phon = "";
+        int k = 1;
+        for (int i = phoneNumber.length() - 1; i > -1;i--){
+            phon = phoneNumber.charAt(i) + phon;
+            if (k == 4 || k == 2)
+                phon = "-"+phon;
+            else if (k == 7)
+                phon = ") "+phon;
+            else if (k == 10)
+                phon = " ("+phon;
+            k++;
         }
-        return result.toString();
+        System.out.println(phoneNumber.charAt(0) + " "+ phoneNumber);
+        return phon;
     }
 }

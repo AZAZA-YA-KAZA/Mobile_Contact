@@ -69,6 +69,8 @@ public class ContactAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder
             ch.tel.setText(contact.getTel());
             if (contact.getImg() != null) {
                 ch.imageView.setImageBitmap(contact.getImg());
+            } else {
+                ch.imageView.setImageResource(R.drawable.screen); // запасное изображение
             }
 
             ch.itemView.setOnClickListener(v -> {
