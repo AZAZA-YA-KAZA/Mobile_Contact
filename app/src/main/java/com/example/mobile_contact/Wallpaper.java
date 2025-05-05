@@ -2,16 +2,20 @@ package com.example.mobile_contact;
 
 import android.os.Bundle;
 import android.os.Handler;
+import android.util.Log;
 import android.view.View;
 import android.view.animation.AlphaAnimation;
 import android.view.animation.Animation;
 
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.fragment.app.FragmentActivity;
+import androidx.fragment.app.FragmentManager;
+import androidx.fragment.app.FragmentTransaction;
 
 import com.example.mobile_contact.databinding.ActivityWallpaperBinding;
 
-public class Wallpaper extends AppCompatActivity {
+public class Wallpaper extends FragmentActivity {
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -44,5 +48,12 @@ public class Wallpaper extends AppCompatActivity {
                 binding.IM.startAnimation(animOut);
             }
         }, 3000);
+        ContactFragment contactFragment = new ContactFragment();
+        FragmentManager fm = getSupportFragmentManager();
+        FragmentTransaction ft = fm.beginTransaction();
+        if(!contactFragment.isAdded()) {
+            ft.add(R.id.RV1, contactFragment);
+        }
+        ft.commit();
     }
 }

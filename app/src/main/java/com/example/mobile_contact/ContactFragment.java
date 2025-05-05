@@ -1,5 +1,6 @@
 package com.example.mobile_contact;
 
+import android.Manifest;
 import android.content.ContentResolver;
 import android.content.ContentUris;
 import android.content.pm.PackageManager;
@@ -17,9 +18,9 @@ import android.view.ViewGroup;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.core.app.ActivityCompat;
 import androidx.fragment.app.Fragment;
 import androidx.recyclerview.widget.RecyclerView;
-
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
 
 import java.io.InputStream;
@@ -27,113 +28,141 @@ import java.util.ArrayList;
 
 public class ContactFragment extends Fragment {
     private static final int REQUEST_READ_CONTACTS = 1;
-    ArrayList<Contact> contacts;
-    Handler handler;
+
+    private Handler handler;
+    private RecyclerView recyclerView;
+    private SwipeRefreshLayout swipeRefreshLayout;
 
     @Override
     public void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+
+        if (requireContext().checkSelfPermission(android.Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED &&
+                requireContext().checkSelfPermission(Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED) {
+            new DataThread().start();
+        } else {
+            requestPermissions(new String[]{android.Manifest.permission.READ_CONTACTS, Manifest.permission.CALL_PHONE},
+                    REQUEST_READ_CONTACTS);
+        }
     }
 
     @Nullable
     @Override
-    public View onCreateView(@NonNull LayoutInflater inflater, @Nullable ViewGroup container, @Nullable Bundle savedInstanceState) {
-        View view = inflater.inflate(R.layout.fragment,container, false);
-        RecyclerView recyclerView = view.findViewById(R.id.RV);
-        handler = new Handler(){
-            @Override
-            public void handleMessage(@NonNull Message msg){
-                super.handleMessage(msg);
+    public View onCreateView(@NonNull LayoutInflater inflater, @Nullable ViewGroup container,
+                             @Nullable Bundle savedInstanceState) {
+        View view = inflater.inflate(R.layout.fragment, container, false);
 
-                contacts = (ArrayList<Contact>) msg.obj;
-                ContactAdapter valuteAdapter = new ContactAdapter(contacts);
-                recyclerView.setAdapter(valuteAdapter);
+        recyclerView = view.findViewById(R.id.RV);
+        swipeRefreshLayout = view.findViewById(R.id.SW);
 
-            }
-        };
-        SwipeRefreshLayout swipeRefreshLayout = view.findViewById(R.id.SW);
-        swipeRefreshLayout.setOnRefreshListener(new SwipeRefreshLayout.OnRefreshListener() {
-            @Override
-            public void onRefresh() {
-                recyclerView.removeAllViews();
-                contacts.clear();
-                DataThread dataThread = new DataThread();
-                dataThread.start();
-                if(swipeRefreshLayout.isRefreshing()){
-                    swipeRefreshLayout.setRefreshing(false);
-                }
-            }
+        handler = new Handler(msg -> {
+            ArrayList<Contact> contacts = (ArrayList<Contact>) msg.obj;
+            ContactAdapter adapter = new ContactAdapter(contacts);
+            recyclerView.setAdapter(adapter);
+            return true;
         });
-        return view;    }
+
+        swipeRefreshLayout.setOnRefreshListener(() -> {
+            recyclerView.removeAllViews();
+            new DataThread().start();
+            swipeRefreshLayout.setRefreshing(false);
+        });
+
+        return view;
+    }
 
     @Override
-    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions,
+    public void onRequestPermissionsResult(int requestCode,
+                                           @NonNull String[] permissions,
                                            @NonNull int[] grantResults) {
-        if (requestCode == REQUEST_READ_CONTACTS) {
-            if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                // Если разрешение получено, запускаем поток снова
-                DataThread dataThread = new DataThread();
-                dataThread.start();
-            }
+        if (requestCode == REQUEST_READ_CONTACTS &&
+                grantResults.length > 0 &&
+                grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+            new DataThread().start();
+        } else {
+            Log.e("Permission", "Доступ к контактам не получен");
         }
     }
 
     class DataThread extends Thread {
-        ArrayList<Contact> contacts = new ArrayList<>();
-
         @Override
         public void run() {
-            super.run();
-            // Получаем контакты
-            ContentResolver resolver = getActivity().getContentResolver();
-            Cursor cursor = resolver.query(
-                    ContactsContract.Contacts.CONTENT_URI,
-                    null, null, null, null);
-            if (cursor != null && cursor.getCount() > 0) {
-                while (cursor.moveToNext()) {
-                    int idIndex = cursor.getColumnIndex(ContactsContract.Contacts._ID);
-                    int nameIndex = cursor.getColumnIndex(ContactsContract.Contacts.DISPLAY_NAME);
-                    if (idIndex < 0) {
-                        Log.e("TAG", "Required column _ID not found");
-                        return;
-                    }
-                    String id = cursor.getString(idIndex);
-                    String name = nameIndex >= 0 ? cursor.getString(nameIndex) : "No Name";
-                    // Проверяем, есть ли у контакта телефон
-                    int hasPhoneIndex = cursor.getColumnIndex(ContactsContract.Contacts.HAS_PHONE_NUMBER);
-                    if (Integer.parseInt(cursor.getString(hasPhoneIndex)) > 0) {
-                        // Получаем номера телефонов
-                        Cursor phoneCursor = resolver.query(
-                                ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
-                                null,
-                                ContactsContract.CommonDataKinds.Phone.CONTACT_ID + " = ?",
-                                new String[]{id},
-                                null);
-                        if (phoneCursor != null) {
-                            while (phoneCursor.moveToNext()) {
-                                int num = phoneCursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER);
-                                String phoneNumber = phoneCursor.getString(num);
-                                // Получаем фото контакта
-                                Bitmap photo = null;
-                                InputStream inputStream = ContactsContract.Contacts.openContactPhotoInputStream(
-                                        resolver, ContentUris.withAppendedId(
-                                                ContactsContract.Contacts.CONTENT_URI, Long.parseLong(id)));
-                                if (inputStream != null) {
-                                    photo = BitmapFactory.decodeStream(inputStream);
+            ArrayList<Contact> contactList = new ArrayList<>();
+            ContentResolver resolver = requireActivity().getContentResolver();
+
+            try (Cursor cursor = resolver.query(
+                    ContactsContract.Contacts.CONTENT_URI, null, null, null, null)) {
+
+                if (cursor != null && cursor.getCount() > 0) {
+                    while (cursor.moveToNext()) {
+                        String id = cursor.getString(cursor.getColumnIndexOrThrow(ContactsContract.Contacts._ID));
+                        String name = cursor.getString(cursor.getColumnIndexOrThrow(ContactsContract.Contacts.DISPLAY_NAME));
+                        int hasPhone = cursor.getInt(cursor.getColumnIndexOrThrow(ContactsContract.Contacts.HAS_PHONE_NUMBER));
+
+                        if (hasPhone > 0) {
+                            try (Cursor phoneCursor = resolver.query(
+                                    ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
+                                    null,
+                                    ContactsContract.CommonDataKinds.Phone.CONTACT_ID + " = ?",
+                                    new String[]{id}, null)) {
+
+                                if (phoneCursor != null) {
+                                    while (phoneCursor.moveToNext()) {
+                                        String phone = phoneCursor.getString(
+                                                phoneCursor.getColumnIndexOrThrow(
+                                                        ContactsContract.CommonDataKinds.Phone.NUMBER));
+
+                                        Bitmap photo = null;
+                                        InputStream stream = ContactsContract.Contacts
+                                                .openContactPhotoInputStream(resolver,
+                                                        ContentUris.withAppendedId(
+                                                                ContactsContract.Contacts.CONTENT_URI,
+                                                                Long.parseLong(id)));
+                                        if (stream != null) {
+                                            photo = BitmapFactory.decodeStream(stream);
+                                        }
+
+                                        String clean = phone.replaceAll("[^+0-9]", "");
+                                        String formatted = format(clean);
+
+                                        boolean duplicate = false;
+                                        for (Contact c : contactList) {
+                                            if (c.getName().equalsIgnoreCase(name) &&
+                                                    c.getTel().replaceAll("[^+0-9]", "")
+                                                            .equals(clean.replaceAll("[^+0-9]", ""))) {
+                                                duplicate = true;
+                                                break;
+                                            }
+                                        }
+
+                                        if (!duplicate) {
+                                            contactList.add(new Contact(name, formatted, photo));
+                                        }
+                                    }
                                 }
-                                // Добавляем контакт в список
-                                contacts.add(new Contact(name, phoneNumber, photo));
                             }
-                            phoneCursor.close();
                         }
                     }
                 }
-                cursor.close();
             }
-            // Отправляем данные в основной поток
+
             Message msg = new Message();
-            msg.obj = contacts;
+            msg.obj = contactList;
             handler.sendMessage(msg);
         }
+    }
+
+    private String format(String phoneNumber) {
+        if (phoneNumber.length() < 11) return phoneNumber;
+        StringBuilder result = new StringBuilder();
+        int len = phoneNumber.length();
+        for (int i = 0; i < len; i++) {
+            char ch = phoneNumber.charAt(i);
+            result.append(ch);
+            if (i == len - 8) result.append(" (");
+            if (i == len - 6) result.append(") ");
+            if (i == len - 4 || i == len - 2) result.append("-");
+        }
+        return result.toString();
     }
 }
